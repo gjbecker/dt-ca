@@ -1,0 +1,3 @@
+[submodule "decision_transformer/envs/gym_ca_data_gen"]
+	path = decision_transformer/envs/gym_ca_data_gen
+	url = git@github.com:gjbecker/gym_ca_data_gen.git
