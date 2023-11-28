@@ -26,7 +26,9 @@ class Trainer:
         train_start = time.time()
 
         self.model.train()
-        for _ in range(num_steps):
+        print()
+        for i in range(num_steps):
+            print(f'Training step: {i+1} / {num_steps}', end='\r')  ### ADDED Print statement
             train_loss = self.train_step()
             train_losses.append(train_loss)
             if self.scheduler is not None:
@@ -46,15 +48,16 @@ class Trainer:
         logs['time/evaluation'] = time.time() - eval_start
         logs['training/train_loss_mean'] = np.mean(train_losses)
         logs['training/train_loss_std'] = np.std(train_losses)
-
+        
         for k in self.diagnostics:
             logs[k] = self.diagnostics[k]
 
         if print_logs:
-            print('=' * 80)
+            print('=' * 60)
             print(f'Iteration {iter_num}')
             for k, v in logs.items():
                 print(f'{k}: {v}')
+            print('=' * 60)
 
         return logs
 

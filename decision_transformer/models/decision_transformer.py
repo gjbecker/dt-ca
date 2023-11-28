@@ -19,6 +19,7 @@ class DecisionTransformer(TrajectoryModel):
             state_dim,
             act_dim,
             hidden_size,
+            res=None,
             max_length=None,
             max_ep_len=4096,
             action_tanh=True,
@@ -32,14 +33,24 @@ class DecisionTransformer(TrajectoryModel):
             n_embd=hidden_size,
             **kwargs
         )
-
+        conv_dims = {
+            64: 1024,
+            128: 9216,
+            256: 50176
+        }
         # note: the only difference between this GPT2Model and the default Huggingface version
         # is that the positional embeddings are removed (since we'll add those ourselves)
         self.transformer = GPT2Model(config)
 
         self.embed_timestep = nn.Embedding(max_ep_len, hidden_size)
         self.embed_return = torch.nn.Linear(1, hidden_size)
-        self.embed_state = torch.nn.Linear(self.state_dim, hidden_size)
+        ### CHANGED embed state to ConvNet, copied DQN from Atari
+        # self.embed_state = torch.nn.Linear(self.state_dim, hidden_size) # Old State Embed, replace with DQN
+        self.embed_state = nn.Sequential(nn.Conv2d(3, 32, 8, stride=4, padding=0), nn.ReLU(),
+                            nn.Conv2d(32, 64, 4, stride=2, padding=0), nn.ReLU(),
+                            nn.Conv2d(64, 64, 3, stride=1, padding=0), nn.ReLU(),
+                            nn.Flatten(), nn.Linear(conv_dims[res], config.n_embd), nn.Tanh())    
+                            # RES=512 => 230400, RES=256 => 50176, 128 => 9216, 64 => 1024
         self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
 
         self.embed_ln = nn.LayerNorm(hidden_size)
@@ -59,8 +70,13 @@ class DecisionTransformer(TrajectoryModel):
             # attention mask for GPT: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
+        ### ADDED state reshape, copied DQN from Atari
+        states = states.reshape(-1, 3, states.shape[-1], states.shape[-1]).type(torch.float32).contiguous()
+
         # embed each modality with a different head
         state_embeddings = self.embed_state(states)
+        ### ADDED state embeddings reshape
+        state_embeddings = state_embeddings.reshape(batch_size, seq_length, self.hidden_size) # (batch, block_size, n_embd)
         action_embeddings = self.embed_action(actions)
         returns_embeddings = self.embed_return(returns_to_go)
         time_embeddings = self.embed_timestep(timesteps)
@@ -102,8 +118,7 @@ class DecisionTransformer(TrajectoryModel):
 
     def get_action(self, states, actions, rewards, returns_to_go, timesteps, **kwargs):
         # we don't care about the past rewards in this model
-
-        states = states.reshape(1, -1, self.state_dim)
+        ### REMOVED state reshape
         actions = actions.reshape(1, -1, self.act_dim)
         returns_to_go = returns_to_go.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
@@ -117,8 +132,12 @@ class DecisionTransformer(TrajectoryModel):
             # pad all tokens to sequence length
             attention_mask = torch.cat([torch.zeros(self.max_length-states.shape[1]), torch.ones(states.shape[1])])
             attention_mask = attention_mask.to(dtype=torch.long, device=states.device).reshape(1, -1)
+            ### CHANGED state size parameters to include additional dimensions
+            # states = torch.cat(
+            #     [torch.zeros((states.shape[0], self.max_length-states.shape[1], self.state_dim), device=states.device), states],
+            #     dim=1).to(dtype=torch.float32)
             states = torch.cat(
-                [torch.zeros((states.shape[0], self.max_length-states.shape[1], self.state_dim), device=states.device), states],
+                [torch.zeros((states.shape[0], self.max_length-states.shape[1], states.shape[2], states.shape[3], states.shape[4]), device=states.device), states],
                 dim=1).to(dtype=torch.float32)
             actions = torch.cat(
                 [torch.zeros((actions.shape[0], self.max_length - actions.shape[1], self.act_dim),

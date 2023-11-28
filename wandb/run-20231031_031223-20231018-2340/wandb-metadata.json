@@ -1,0 +1,24 @@
+{
+    "root": "/work/flemingc/gjbecker/decision-transformer",
+    "program": "/work/flemingc/gjbecker/decision-transformer/gym/experiment_grid.py",
+    "git": {
+        "remote": "https://github.com/kzl/decision-transformer.git",
+        "commit": "e2d82e68f330c00f763507b3b01d774740bee53f"
+    },
+    "email": "gjbecker@iastate.edu",
+    "startedAt": "2023-10-31T03:12:23.983356",
+    "host": "nova18-gpu-5",
+    "username": "gjbecker",
+    "executable": "/work/flemingc/gjbecker/decision-transformer/gym/venv/bin/python",
+    "os": "Linux-5.14.0-284.25.1.el9_2.x86_64-x86_64-with-glibc2.34",
+    "python": "3.10.8",
+    "gpu": "Tesla V100-PCIE-32GB",
+    "gpu_count": 1,
+    "cpu_count": 36,
+    "args": [],
+    "state": "running",
+    "jobType": null,
+    "mode": "run",
+    "project": "decision-transformer",
+    "heartbeatAt": "2023-11-01T03:12:45.253501"
+}
