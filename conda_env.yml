@@ -1,4 +1,4 @@
-name: decision-transformer-gym
+name: dt-ca
 channels:
 - pytorch
 dependencies:
