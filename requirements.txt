@@ -3,5 +3,6 @@ gym==0.26.2
 torch==2.0.1
 transformers==4.5.1
 wandb==0.9.1
-# packaging==21.3
+scipy
+packaging==21.3
 configparser
