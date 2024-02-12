@@ -20,4 +20,4 @@ print_header "Running grid collision avoidance Decision Transformer python scrip
 
 # Experiment
 # cd $DIR
-python experiment.py
+python experiment_grid.py
