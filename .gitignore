@@ -1,3 +1,12 @@
+*.egg-info
+*.pyc
+.idea
+logs
+*.swp
+*~
+*.lprof
+*.DS_Store
+
 wandb/
 venv*/
 models/
