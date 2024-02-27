@@ -11,5 +11,5 @@ wandb/
 venv*/
 models/
 test/
-evaluation/
+model_eval/
 histograms/
