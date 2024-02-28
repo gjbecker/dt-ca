@@ -85,14 +85,11 @@ def experiment(
             print('Could not find gym_collision_avoidance module. Was it installed?')
             sys.exit()
         
-        assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents
+        assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents, f'{Config.MAX_NUM_AGENTS_IN_ENVIRONMENT} != {num_agents}'
             
         max_ep_len = DTConf.getint('env', 'max_ep_len')
-        env_targets = [float(s) for s in DTConf['env']['env_targets'].split(',')]
         eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
         os.makedirs(eval_save_dir, exist_ok=True)
-        for tar in env_targets:
-            os.makedirs(eval_save_dir + f'/{tar}/', exist_ok=True)
         
         scale = DTConf.getint('env', 'scale') 
         res = DTConf.getint('env', 'res')   # Change shape accordingly in decision_transformer.forward and update convnet linear dimension
@@ -100,8 +97,8 @@ def experiment(
         raise NotImplementedError
 
     ### REMOVED BC target modification
-    # state_dim = 4*num_agents + 3   # 4 * num_agents + 3
-    # act_dim = DTConf.getint('model', 'action_dim')
+    state_dim = env.observation_space.shape[1]
+    act_dim = env.action_space.shape[0]
 
     # load dataset
     dataset_path = f'decision_transformer/envs/gym_ca/DATA/{dataset}'
@@ -110,15 +107,15 @@ def experiment(
         trajectories = pkl.load(f)
 
     observations, actions, rewards, traj_lens, returns = [[] for _ in range(5)]
-    state_dim, num_agents_data = trajectories['observations'][0].shape[2], trajectories['observations'][0].shape[1]
-    act_dim = trajectories['actions'][0].shape[2]
+    state_dim_data, num_agents_data = trajectories['observations'][0].shape[2], trajectories['observations'][0].shape[1]
+    act_dim_data = trajectories['actions'][0].shape[2]
 
     mode = variant.get('mode', 'normal')
 
     for i in range(len(trajectories['observations'])):
-        obs = trajectories['observations'][i].reshape(-1, state_dim)[0::num_agents_data]
+        obs = trajectories['observations'][i].reshape(-1, state_dim_data)[0::num_agents_data]
         observations.append(obs)
-        act = trajectories['actions'][i].reshape(-1, act_dim)[0::num_agents_data]
+        act = trajectories['actions'][i].reshape(-1, act_dim_data)[0::num_agents_data]
         actions.append(act)
         rew = np.array(trajectories['rewards'][i].reshape(-1,1)[0::num_agents_data]).reshape(-1)
         rewards.append(rew)
@@ -126,8 +123,11 @@ def experiment(
         returns.append(np.array(rew).sum())
  
     traj_lens, returns = np.array(traj_lens), np.array(returns)
-    env_targets.append(max(returns))
-    env_targets.append(np.mean(returns))
+    env_targets = []
+    env_targets.append(round(max(returns), 2))
+    env_targets.append(round(np.mean(returns), 2))
+    for tar in env_targets:
+        os.makedirs(eval_save_dir + f'/{tar}/', exist_ok=True)
     print('Data loaded successfully!')
 
     ### REMOVED Input Normalization

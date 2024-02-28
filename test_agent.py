@@ -21,7 +21,10 @@ Config.PLOT_CIRCLES_ALONG_TRAJ = True
 Config.MAX_TIME_RATIO = 3
 
 policies = [str(s) for s in DTConf['test']['policies'].split(',')]
+assert policies[0] == 'external'
 num_agents = DTConf.getint('test', 'num_agents')
+state_dim = env.observation_space.shape[1]
+act_dim = env.action_space.shape[0]
 
 assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents
 
@@ -62,8 +65,8 @@ def reset_test(env, case_num, envs=None):
 # Model from models dir
 def load_model(model_path):
     model = DecisionTransformer(
-                state_dim=DTConf.getint('model','state_dim'),
-                act_dim=DTConf.getint('model','action_dim'),
+                state_dim,
+                act_dim,
                 res=DTConf.getint('env', 'res'),
                 max_length=DTConf.getint('model','k'),
                 max_ep_len=DTConf.getint('env', 'max_ep_len'),
