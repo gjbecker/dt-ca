@@ -85,7 +85,7 @@ def experiment(
             sys.exit()
         max_ep_len = DTConf.getint('env', 'max_ep_len')
         env_targets = [float(s) for s in DTConf['env']['env_targets'].split(',')]
-        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/evaluation/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{model_id}/"
+        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{model_id}/"
         os.makedirs(eval_save_dir, exist_ok=True)
         for tar in env_targets:
             os.makedirs(eval_save_dir + f'/{tar}/', exist_ok=True)

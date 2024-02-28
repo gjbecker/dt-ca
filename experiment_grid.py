@@ -45,9 +45,9 @@ def experiment(
     if env_name == 'grid':
         # ADDED check for gym_collision_avoidance module 
         try:
-            from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-            from decision_transformer.envs.gym_ca_data_gen.DATA.grid_representation import episode_grid, step_grid
-            from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs import Config
+            from decision_transformer.envs.gym_ca.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+            from decision_transformer.envs.gym_ca.DATA.grid_representation import episode_grid, step_grid
+            from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
             Config.EVALUATE_MODE = True
             Config.SAVE_EPISODE_PLOTS = True
             Config.SHOW_EPISODE_PLOTS = True
@@ -73,11 +73,11 @@ def experiment(
 
             test_cases = pd.read_pickle(
                 os.path.dirname(os.path.realpath(__file__)) 
-                + f'/decision_transformer/envs/gym_ca_data_gen/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+                + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
                 )
             
             def reset_test(case_num):
-                import decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs.test_cases as tc
+                import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
 
                 def reset_env(env, agents, case_num, policy,):
                     env.unwrapped.plot_policy_name = policy        
@@ -101,7 +101,7 @@ def experiment(
             
         max_ep_len = DTConf.getint('env', 'max_ep_len')
         env_targets = [float(s) for s in DTConf['env']['env_targets'].split(',')]
-        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/evaluation/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
+        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
         os.makedirs(eval_save_dir, exist_ok=True)
         for tar in env_targets:
             os.makedirs(eval_save_dir + f'/{tar}/', exist_ok=True)
@@ -116,7 +116,7 @@ def experiment(
     act_dim = DTConf.getint('model', 'action_dim')
 
     # load dataset
-    dataset_path = f'decision_transformer/envs/gym_ca_data_gen/DATA/datasets/{dataset}.pkl'
+    dataset_path = f'decision_transformer/envs/gym_ca/DATA/{dataset}'
     print('Loading data from ' + dataset_path)
     with open(dataset_path, 'rb') as f:
         trajectories = pkl.load(f)

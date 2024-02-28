@@ -9,7 +9,7 @@ import pickle as pkl
 import random
 import sys, os, datetime, time
 
-from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg_linear
+from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg_d4rl
 from decision_transformer.models.decision_transformer_linear import DecisionTransformer
 # from decision_transformer.models.mlp_bc import MLPBCModel             # BC Model
 # from decision_transformer.training.act_trainer import ActTrainer      # BC Trainer
@@ -44,27 +44,26 @@ def experiment(
     ### REMOVED other gym environments, original implementation in experiment.py
     if env_name == 'fixed-d4rl':
         # ADDED check for gym_collision_avoidance module 
+        from decision_transformer.envs.gym_ca.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+        from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
+        Config.EVALUATE_MODE = True
+        Config.SAVE_EPISODE_PLOTS = True
+        Config.SHOW_EPISODE_PLOTS = True
+        Config.DT = 0.1
+        Config.PLOT_CIRCLES_ALONG_TRAJ = True
+        env = create_env()
         try:
-            from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-            from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs import Config
-            Config.EVALUATE_MODE = True
-            Config.SAVE_EPISODE_PLOTS = True
-            Config.SHOW_EPISODE_PLOTS = True
-            Config.DT = 0.1
-            Config.PLOT_CIRCLES_ALONG_TRAJ = True
-            env = create_env()
-
-            num_agents = 4
+            num_agents = int(dataset.split('_')[1])
             policies = ['RVO']*num_agents
             policies[0] = 'external'
 
             test_cases = pd.read_pickle(
                 os.path.dirname(os.path.realpath(__file__)) 
-                + f'/decision_transformer/envs/gym_ca_data_gen/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+                + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
                 )
             
             def reset_test(case_num):
-                import decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs.test_cases as tc
+                import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
 
                 def reset_env(env, agents, case_num, policy,):
                     env.unwrapped.plot_policy_name = policy        
@@ -85,10 +84,12 @@ def experiment(
         except:
             print('Could not find gym_collision_avoidance module. Was it installed?')
             sys.exit()
+        
+        assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents
             
         max_ep_len = DTConf.getint('env', 'max_ep_len')
         env_targets = [float(s) for s in DTConf['env']['env_targets'].split(',')]
-        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/evaluation/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
+        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('_a')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
         os.makedirs(eval_save_dir, exist_ok=True)
         for tar in env_targets:
             os.makedirs(eval_save_dir + f'/{tar}/', exist_ok=True)
@@ -103,19 +104,14 @@ def experiment(
     # act_dim = DTConf.getint('model', 'action_dim')
 
     # load dataset
-    # dataset_path = f'decision_transformer/envs/gym_ca_data_gen/DATA/datasets/{dataset}.pkl'
-    # print('Loading data from ' + dataset_path)
-    # with open(dataset_path, 'rb') as f:
-    #     trajectories = pkl.load(f)
-    pkl_path = os.path.dirname(os.path.realpath(__file__)) + '/d4rl.p'
-    print('Loading data from ' + pkl_path)
-    
-    with open(pkl_path, 'rb') as f:
+    dataset_path = f'decision_transformer/envs/gym_ca/DATA/{dataset}'
+    print('Loading data from ' + dataset_path)
+    with open(dataset_path, 'rb') as f:
         trajectories = pkl.load(f)
 
     observations, actions, rewards, traj_lens, returns = [[] for _ in range(5)]
     state_dim, num_agents_data = trajectories['observations'][0].shape[2], trajectories['observations'][0].shape[1]
-    act_dim = trajectories['actions'][2].shape[1]
+    act_dim = trajectories['actions'][0].shape[2]
 
     mode = variant.get('mode', 'normal')
 
@@ -220,7 +216,7 @@ def experiment(
                 # print(f'Eval episode: {x+1} / {num_eval_episodes}', end='\r')
                 with torch.no_grad():
                     if model_type == 'dt':
-                        ret, length, stats = evaluate_episode_rtg_linear(
+                        ret, length, stats = evaluate_episode_rtg_d4rl(
                             env,
                             state_dim,
                             act_dim,
@@ -357,7 +353,7 @@ def experiment(
 
     if log_to_wandb:
         torch.save(model.state_dict(), save_model_path)
-        artifact = wandb.Artifact(dataset, 'model')
+        artifact = wandb.Artifact(dataset.split('/')[0], 'model')
         artifact.add_file(save_model_path)
         run.log_artifact(artifact)
 
