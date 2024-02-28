@@ -3,16 +3,14 @@ import torch
 import numpy as np
 import pandas as pd
 import datetime, time, os, random
-from decision_transformer.models.decision_transformer import DecisionTransformer
-from decision_transformer.evaluation.evaluate_episodes import test_episode_rtg_grid
+from decision_transformer.models.decision_transformer_linear import DecisionTransformer
+from decision_transformer.evaluation.evaluate_episodes import test_episode_rtg_d4rl
 import configparser
-from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-from decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs import Config
+from decision_transformer.envs.gym_ca.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
 
 DTConf = configparser.ConfigParser()
 DTConf.read('experiment.config')
-rewConf = configparser.ConfigParser()
-rewConf.read('decision_transformer/envs/gym_ca_data_gen/reward.config')
 
 Config.EVALUATE_MODE = True
 Config.SAVE_EPISODE_PLOTS = True
@@ -22,24 +20,18 @@ Config.DT = 0.1
 Config.PLOT_CIRCLES_ALONG_TRAJ = True
 Config.MAX_TIME_RATIO = 3
 
-rewardtype = DTConf['test']['reward']
-Config.REWARD_AT_GOAL = rewConf.getfloat(rewardtype, 'reach_goal')
-Config.REWARD_COLLISION_WITH_AGENT = rewConf.getfloat(rewardtype, 'collision_agent')
-Config.REWARD_COLLISION_WITH_WALL = -rewConf.getfloat(rewardtype, 'collision_wall')
-Config.REWARD_GETTING_CLOSE   = rewConf.getfloat(rewardtype, 'close_reward')
-Config.GETTING_CLOSE_RANGE = rewConf.getfloat(rewardtype, 'close_range')
-Config.REWARD_TIME_STEP   = rewConf.getfloat(rewardtype, 'timestep')
-Config.REACHER = rewConf.getboolean(rewardtype, 'reacher')
-
 policies = [str(s) for s in DTConf['test']['policies'].split(',')]
 num_agents = DTConf.getint('test', 'num_agents')
+
+assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents
+
 test_cases = pd.read_pickle(
     os.path.dirname(os.path.realpath(__file__)) 
-    + f'/decision_transformer/envs/gym_ca_data_gen/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+    + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
 )
 
 def reset_test(env, case_num, envs=None):
-    import decision_transformer.envs.gym_ca_data_gen.gym_collision_avoidance.envs.test_cases as tc
+    import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
 
     def reset_env(env, agents, case_num, policy,):
         env.unwrapped.plot_policy_name = policy        
@@ -84,7 +76,7 @@ def load_model(model_path):
                 resid_pdrop=DTConf.getfloat('model','dropout'),
                 attn_pdrop=DTConf.getfloat('model','dropout'),
             )
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path), strict=False)
     return model
 
 ### EVALUATION of loaded model ###
@@ -92,9 +84,9 @@ def test_single(model_path):
     model = load_model(model_path)
     env = create_env()
     env_targets = [float(s) for s in DTConf['test']['env_targets'].split(',')]
-    test_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/test/tmp/{model_path.split('-')[1]}/{policies[1]}_{num_agents}_agents/{model_path.split('.pt')[0][-13:]}/"
+    test_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/test/{model_path.split('-')[1]}/{policies[1]}_{num_agents}_agents/{model_path.split('.pt')[0][-13:]}/"
     print(test_save_dir)
-    os.makedirs(test_save_dir, exist_ok=True)
+    os.makedirs(test_save_dir, exist_ok=False)
     for tar in env_targets:
         os.makedirs(test_save_dir + f'/{tar}/', exist_ok=True)
 
@@ -109,8 +101,9 @@ def test_single(model_path):
                 print(f"RTG: {target_rew:.1f} | Eval episode: {x+1} / {DTConf.getint('test','eval_episodes')}", end='\r')
                 with torch.no_grad():
                     if DTConf['model']['model_type'] == 'dt':
-                        ret, length, stats = test_episode_rtg_grid(
+                        ret, length, stats = test_episode_rtg_d4rl(
                             env,
+                            state_dim=DTConf.getint('model', 'state_dim'),
                             act_dim=DTConf.getint('model', 'action_dim'),
                             model=model,
                             max_ep_len=DTConf.getint('env', 'max_ep_len'),
@@ -143,8 +136,10 @@ def test_single(model_path):
             return {
                 f'target_{target_rew}_return_mean': np.mean(returns),
                 f'target_{target_rew}_return_std': np.std(returns),
+                f'target_{target_rew}_return_max': np.max(returns),
                 f'target_{target_rew}_length_mean': np.mean(lengths),
                 f'target_{target_rew}_length_std': np.std(lengths),
+                f'target_{target_rew}_length_max': np.max(lengths),
             }
         return fn
     logs = dict()
