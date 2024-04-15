@@ -48,7 +48,7 @@ def experiment(
         from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
         Config.EVALUATE_MODE = True
         Config.SAVE_EPISODE_PLOTS = True
-        Config.SHOW_EPISODE_PLOTS = True
+        Config.SHOW_EPISODE_PLOTS = False
         Config.DT = 0.1
         Config.PLOT_CIRCLES_ALONG_TRAJ = True
         env = create_env()
@@ -92,7 +92,7 @@ def experiment(
         os.makedirs(eval_save_dir, exist_ok=True)
         
         scale = DTConf.getint('env', 'scale') 
-        res = DTConf.getint('env', 'res')   # Change shape accordingly in decision_transformer.forward and update convnet linear dimension
+        res = DTConf.getint('env', 'res') 
     else:
         raise NotImplementedError
 
@@ -121,7 +121,7 @@ def experiment(
         rewards.append(rew)
         traj_lens.append(len(trajectories['observations'][i]))
         returns.append(np.array(rew).sum())
- 
+
     traj_lens, returns = np.array(traj_lens), np.array(returns)
     env_targets = []
     env_targets.append(round(max(returns), 2))
