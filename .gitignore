@@ -13,3 +13,4 @@ models/
 test/
 model_eval/
 histograms/
+d4rl/*.pkl
