@@ -14,7 +14,7 @@ DTConf.read('experiment.config')
 
 Config.EVALUATE_MODE = True
 Config.SAVE_EPISODE_PLOTS = True
-Config.SHOW_EPISODE_PLOTS = True
+Config.SHOW_EPISODE_PLOTS = False
 Config.ANIMATE_EPISODES = False
 Config.DT = 0.1
 Config.PLOT_CIRCLES_ALONG_TRAJ = True
@@ -23,6 +23,7 @@ Config.MAX_TIME_RATIO = 3
 policies = [str(s) for s in DTConf['test']['policies'].split(',')]
 assert policies[0] == 'external'
 num_agents = DTConf.getint('test', 'num_agents')
+env = create_env()
 state_dim = env.observation_space.shape[1]
 act_dim = env.action_space.shape[0]
 
@@ -83,9 +84,8 @@ def load_model(model_path):
     return model
 
 ### EVALUATION of loaded model ###
-def test_single(model_path):
+def test_single(env, model_path):
     model = load_model(model_path)
-    env = create_env()
     env_targets = [float(s) for s in DTConf['test']['env_targets'].split(',')]
     test_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/test/{model_path.split('-')[1]}/{policies[1]}_{num_agents}_agents/{model_path.split('.pt')[0][-13:]}/"
     print(test_save_dir)
@@ -106,8 +106,8 @@ def test_single(model_path):
                     if DTConf['model']['model_type'] == 'dt':
                         ret, length, stats = test_episode_rtg_d4rl(
                             env,
-                            state_dim=DTConf.getint('model', 'state_dim'),
-                            act_dim=DTConf.getint('model', 'action_dim'),
+                            state_dim,
+                            act_dim,
                             model=model,
                             max_ep_len=DTConf.getint('env', 'max_ep_len'),
                             scale=DTConf.getfloat('env', 'scale'),
@@ -193,4 +193,4 @@ if __name__ == '__main__':
     if multi:
         test_multi(model_path)
     else:
-        test_single(model_path)
+        test_single(env, model_path)
