@@ -9,7 +9,7 @@ import random
 import sys
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg
-from decision_transformer.models.decision_transformer_linear import DecisionTransformer
+from decision_transformer.models.decision_transformer import DecisionTransformer
 from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer

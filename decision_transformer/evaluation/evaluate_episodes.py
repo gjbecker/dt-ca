@@ -418,10 +418,10 @@ def test_episode_rtg_d4rl(
     if mode == 'noise':
         state = state + np.random.normal(0, 0.1, size=state.shape)
 
-    state = env.reset()
+    state, _ = env.reset()
     # we keep all the histories on the device
     # note that the latest action and reward will be "padding"
-    states = torch.from_numpy(state[0][0]).reshape(1, state_dim).to(device=device, dtype=torch.float32)
+    states = torch.from_numpy(state[0]).reshape(1, state_dim).to(device=device, dtype=torch.float32)
     actions = torch.zeros((0, act_dim), device=device, dtype=torch.float32)
     rewards = torch.zeros(0, device=device, dtype=torch.float32)
 
@@ -446,6 +446,18 @@ def test_episode_rtg_d4rl(
         )
         actions[-1] = action
         action = action.detach().cpu().numpy()
+        if len(action) == 2:
+            pass
+        elif len(action) == 11:
+            act_idx = np.argmax(action)
+            action = Actions().actions[act_idx]
+            action[0]*=state[0][3]
+        elif len(action) == 29:
+            act_idx = np.argmax(action)
+            action = Actions_Plus().actions[act_idx]
+            action[0]*=state[0][3]
+        else:
+            assert(0), 'Incorrect action dim'
 
         state, rew, done, truncated, info = env.step([action])
 

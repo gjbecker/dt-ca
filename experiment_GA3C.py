@@ -7,12 +7,13 @@ import argparse
 import pickle as pkl
 import random
 import sys, os, datetime, time
-import GA3C_config as DTconfig
+from copy import deepcopy
+import DT_GA3C_config as DTconfig
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg_d4rl
-from decision_transformer.models.decision_transformer_linear import DecisionTransformer
+from decision_transformer.models.decision_transformer import DecisionTransformer
 # from decision_transformer.models.mlp_bc import MLPBCModel             # BC Model
 # from decision_transformer.training.act_trainer import ActTrainer      # BC Trainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
@@ -34,7 +35,7 @@ def experiment(
 
     env_name, dataset = variant['env'], variant['dataset']
     model_type = variant['model_type']
-    group_name = f'{env_name}-{dataset.split("_agent")[0]}'       # REMOVED exp_prefix
+    group_name = f'{env_name}{dataset.split("_")[2]}-{dataset.split("_agent")[0]}'       # REMOVED exp_prefix
     if DTconfig.resume:
         model_id = DTconfig.load_path.split('/')[-1].split('.')[0]
     else:
@@ -42,57 +43,74 @@ def experiment(
     exp_prefix = f'{group_name}-{model_id}'
 
     ### REMOVED other gym environments, original implementation in experiment.py
-    if env_name == 'cont_GA3C':
+    if env_name[-4:] == 'GA3C':
         # ADDED check for gym_collision_avoidance module 
-        from decision_transformer.envs.gym_ca.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-        from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
+        sys.path.append(os.path.abspath(os.path.join('..', 'gym_ca')))
+        try:
+            from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+            from gym_collision_avoidance.envs import Config
+            import gym_collision_avoidance.envs.test_cases as tc
+        except:
+            print('Could not find gym_collision_avoidance module. Was it installed?')
+            sys.exit()
+        
         num_agents = int(dataset.split('_')[0])
+        num_actions = int(dataset.split('_')[2])
         Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
         Config.MAX_NUM_AGENTS_TO_SIM = num_agents
         Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
         Config.SAVE_EPISODE_PLOTS = True
         Config.STATES_IN_OBS = ['num_other_agents', 'dist_to_goal', 'heading_ego_frame', 'pref_speed', 'radius', 'other_agents_states']
         Config.setup_obs()
- 
+
         env = create_env()
         env_targets = DTconfig.env_targets
 
-        try:
-            policies = ['RVO']*num_agents
-            policies[0] = 'external'
+        if env_name == 'cont_GA3C':
+            dataset_act = 'c_actions'
+            act_dim = env.action_space.shape[0]
+        elif env_name == 'disc_GA3C':
+            dataset_act = 'd_actions'
+            act_dim = num_actions
+        else:
+            assert(0), 'invalid env_name'
 
-            test_cases = pd.read_pickle(
-                os.path.dirname(os.path.realpath(__file__)) 
-                + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
-                )
-            
-            def reset_test(case_num):
-                import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
+        # test_cases = []
+        # tc_args = DTconfig.test_case_args
+        # for _ in range(DTconfig.max_iters*DTconfig.num_eval_episodes):  
+        #     test_case = tc.tc.generate_rand_test_case_multi(
+        #         num_agents=DTconfig.num_agents, side_length=5, speed_bnds=[0.5, 2.0], radius_bnds=[0.5,0.5]
+        #     )
+        #     test_cases.append(test_case)
+        policies = DTconfig.policies
 
-                def reset_env(env, agents, case_num, policy,):
-                    env.unwrapped.plot_policy_name = policy        
-                    env.set_agents(agents)
-                    init_obs = env.reset()
-                    env.unwrapped.test_case_index = case_num
-                    return init_obs, agents
-                
-                if case_num > 20:
-                    policies = ['noncoop']*num_agents
-                else:
-                    policies = ['RVO']*num_agents
-                policies[0] = 'external'
-
-                agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num-1], policies=policies)
-                _, _ = reset_env(env, agents, case_num, policy='DT')
-
-        except:
-            print('Could not find gym_collision_avoidance module. Was it installed?')
-            sys.exit()
+        test_cases = pd.read_pickle(
+            os.path.dirname(os.path.realpath(__file__)) 
+            + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+            )
         
-        assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents, f'{Config.MAX_NUM_AGENTS_IN_ENVIRONMENT} != {num_agents}'
+        def reset_test(case_num, iter_num):
+            def reset_env(env, agents, case_num, policy,):
+                env.unwrapped.plot_policy_name = policy        
+                env.set_agents(agents)
+                env.reset()
+                env.unwrapped.test_case_index = case_num
+
+            ### Get agents from test case
+            # test_ = test_cases[(DTconfig.num_eval_episodes*(iter_num-1))+case_num-1]
+            # agents = tc.cadrl_test_case_to_agents(test_, tc_args['policies'], tc_args['policy_distr'])
+            # agents[0].policy = tc.policy_dict['external']()   # set first agent policy to external and init
+            if case_num > 20:
+                policies = ['noncoop']*num_agents
+            else:
+                policies = [DTconfig.policies]*num_agents
+            policies[0] = 'external'
+            agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num-1], policies=policies)
+
+            reset_env(env, agents, case_num, policy='DT')
             
         max_ep_len = DTconfig.max_ep_len
-        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('/')[0]}/{policies[1]}_{num_agents}_agents/{env_name}/{model_id}/"
+        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('/')[0]}/{policies}_{num_agents}_agents/{env_name}/{model_id}/"
         os.makedirs(eval_save_dir, exist_ok=True)
         
         scale = DTconfig.scale
@@ -101,11 +119,10 @@ def experiment(
 
     ### REMOVED BC target modification
     state_dim = env.observation_space.shape[1]
-    act_dim = env.action_space.shape[0]
 
     # load dataset
-    dataset_path = f'decision_transformer/envs/gym_ca/GA3C/{dataset}'
-    print('Loading data from ' + dataset_path)
+    dataset_path = os.path.join(os.path.dirname(__file__), '../datasets_ca/GA3C', dataset)
+    print('Loading data from \n  ' + dataset_path)
     with open(dataset_path, 'rb') as f:
         trajectories = pkl.load(f)
 
@@ -120,7 +137,6 @@ def experiment(
         traj_lens.append(len(path['observations']))
         returns.append(path['rewards'].sum())
     traj_lens, returns = np.array(traj_lens), np.array(returns)
-    # trajectories['actions'] = trajectories['c_actions']
 
     # used for input normalization
     states = np.concatenate(states, axis=0)
@@ -137,9 +153,9 @@ def experiment(
     print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
     print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
     print('=' * 50)
-    
+    assert(0)
     K = variant['K']      
-    gamma = 0.9
+    gamma = DTconfig.gamma
     batch_size = variant['batch_size']
     num_eval_episodes = variant['num_eval_episodes']
     ### REMOVED pct_traj
@@ -162,13 +178,23 @@ def experiment(
             idx = int(sorted_inds[batch_inds[i]])
             ### ADDED state transformation to grid
             traj_obs = trajectories[idx]['observations']
-            traj_acts = trajectories[idx]['c_actions']
+            traj_acts = trajectories[idx][dataset_act]
             traj_rews = trajectories[idx]['rewards']
             si = random.randint(0, traj_rews.shape[0] - 1)
+            if dataset_act == 'd_actions':
+                act_idx = traj_acts[si:si+max_len]
+                transformed_acts = []
+                for a_idx in act_idx:
+                    a_ = np.zeros((num_actions))
+                    a_[a_idx] = 1
+                    transformed_acts.append(a_)
+                transformed_acts = np.array(transformed_acts)
+            else:
+                transformed_acts = traj_acts[si:si+max_len]
             # get sequences from dataset
             ### CHANGED Reshape parameters for state
             s.append(traj_obs[si:si + max_len].reshape(1, -1, state_dim))    # Linear Layer
-            a.append(traj_acts[si:si + max_len].reshape(1, -1, act_dim))
+            a.append(transformed_acts.reshape(1, -1, act_dim))
             r.append(traj_rews[si:si + max_len].reshape(1, -1, 1))
             ### DELETED Dones, not used in transformer
 
@@ -202,15 +228,15 @@ def experiment(
     
 
     def eval_episodes(target_rew):
-        def fn(model):
+        def fn(model, iteration):
             returns, lengths = [], []
             print()
             env.set_plot_save_dir(eval_save_dir+ f'/{target_rew}/')
-            reset_test(1)
+            reset_test(1, iteration)
             df = pd.DataFrame()
             outcomes = []
             for x in range(num_eval_episodes):
-                # print(f'Eval episode: {x+1} / {num_eval_episodes}', end='\r')
+                print(f'Eval episode: {x+1} / {num_eval_episodes}', end='\r')
                 with torch.no_grad():
                     if model_type == 'dt':
                         ret, length, stats = evaluate_episode_rtg_d4rl(
@@ -232,7 +258,7 @@ def experiment(
                             stats,
                         )
                         outcomes.append(1 if (stats['DT outcome'] == 'at_goal') else 0)
-                        reset_test(x+2)
+                        reset_test(x+2, iteration)
                 ### REMOVED BC Evaluation function
                 ### ADDED Evaluation more statistics
                 returns.append(ret)
@@ -270,6 +296,7 @@ def experiment(
             n_positions=1024,
             resid_pdrop=variant['dropout'],
             attn_pdrop=variant['dropout'],
+            gamma=gamma,
         )
     ### REMOVED BC Model
     else:

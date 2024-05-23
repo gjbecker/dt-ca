@@ -2,195 +2,155 @@ import wandb
 import torch
 import numpy as np
 import pandas as pd
-import datetime, time, os, random
-from decision_transformer.models.decision_transformer_linear import DecisionTransformer
-from decision_transformer.evaluation.evaluate_episodes import test_episode_rtg_d4rl
-import configparser
-from decision_transformer.envs.gym_ca.gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs import Config
+import json
+import datetime, time, os, random, sys
+import argparse
+from decision_transformer.models.decision_transformer import DecisionTransformer
+import DT_GA3C_config as DTconfig
 
-DTConf = configparser.ConfigParser()
-DTConf.read('experiment.config')
+sys.path.append(os.path.abspath(os.path.join('..', 'gym_ca')))
+try:
+    from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+    from gym_collision_avoidance.envs import Config
+except:
+    print('Could not find gym_collision_avoidance module. Was it installed?')
+    sys.exit()
 
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"DEVICE: {DEVICE}")
 Config.EVALUATE_MODE = True
-Config.SAVE_EPISODE_PLOTS = True
+Config.SAVE_EPISODE_PLOTS = False
 Config.SHOW_EPISODE_PLOTS = False
 Config.ANIMATE_EPISODES = False
-Config.DT = 0.1
 Config.PLOT_CIRCLES_ALONG_TRAJ = True
-Config.MAX_TIME_RATIO = 3
+Config.MAX_TIME_RATIO = 5
 
-policies = [str(s) for s in DTConf['test']['policies'].split(',')]
-assert policies[0] == 'external'
-num_agents = DTConf.getint('test', 'num_agents')
+
+num_agents = DTconfig.num_agents
+test_policy = DTconfig.test_policy
+other_pols = DTconfig.other_policies
+
+if type(other_pols) == str:
+    policies = [other_pols]*num_agents
+    policies[0] = test_policy
+elif type(other_pols) == list:
+    policies = [test_policy]
+    policies.extend(other_pols)
+    assert(len(policies) == num_agents)
+else:
+    assert(0), 'Unrecognized policy!'
+
+Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
+Config.MAX_NUM_AGENTS_TO_SIM = num_agents
+Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
+Config.SAVE_EPISODE_PLOTS = True
+Config.setup_obs()
+
 env = create_env()
-state_dim = env.observation_space.shape[1]
-act_dim = env.action_space.shape[0]
-
-assert Config.MAX_NUM_AGENTS_IN_ENVIRONMENT == num_agents
 
 test_cases = pd.read_pickle(
     os.path.dirname(os.path.realpath(__file__)) 
     + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
 )
 
-def reset_test(env, case_num, envs=None):
+def reset_test(env, case_num, model_path=None, state_dim=None, act_dim=None, checkpt=None):
     import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
 
     def reset_env(env, agents, case_num, policy,):
         env.unwrapped.plot_policy_name = policy        
         env.set_agents(agents)
-        init_obs = env.reset()
+        state, _ = env.reset()
         env.unwrapped.test_case_index = case_num
-        return init_obs, agents
-    
-    def reset_envs(envs, agents, case_num, policy,):
-        for env in envs:
-            env.unwrapped.plot_policy_name = policy
-            env.set_agents(agents)
-            init_obs = env.reset()
-            env.unwrapped.test_case_index = case_num
-            agents.append(agents.pop(0))    # rotate agents 1 to left
-        return init_obs, agents
+        return state
 
     if case_num > 500:
-        agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num-501], policies=policies)
+        agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num-500], policies=policies)
     else:
-        agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num-1], policies=policies)
+        agents = tc.cadrl_test_case_to_agents(test_case=test_cases[case_num], policies=policies)
+
+    if model_path is not None:
+        [
+            agent.policy.initialize_model(state_dim, act_dim, model_path, DEVICE)
+            for agent in agents
+            if hasattr(agent.policy, "initialize_model")
+        ]
+    if checkpt is not None:
+        [
+            agent.policy.initialize_network(checkpt_dir=checkpt[0], checkpt_name=checkpt[1])
+            for agent in agents
+            if hasattr(agent.policy, "initialize_network")
+        ]
     
-    if envs is None:
-        _, _ = reset_env(env, agents, case_num, policy='DT')
+    return reset_env(env, agents, case_num, policy='DT')
+
+
+def test_model(env, model_path):
+    print(f'Loading DT model: {model_path}')
+    state_dim = env.observation_space.shape[1]
+    if ('cont' in model_path) == True:
+        act_dim = 2
     else:
-        _, _ = reset_envs(envs, agents, case_num, policy='DT')
-
-# Model from models dir
-def load_model(model_path):
-    model = DecisionTransformer(
-                state_dim,
-                act_dim,
-                res=DTConf.getint('env', 'res'),
-                max_length=DTConf.getint('model','k'),
-                max_ep_len=DTConf.getint('env', 'max_ep_len'),
-                hidden_size=DTConf.getint('model','embed_dim'),
-                n_layer=DTConf.getint('model','n_layer'),
-                n_head=DTConf.getint('model','n_head'),
-                n_inner=4*DTConf.getint('model','embed_dim'),
-                activation_function=DTConf['model']['activation_fn'],
-                n_positions=1024,
-                resid_pdrop=DTConf.getfloat('model','dropout'),
-                attn_pdrop=DTConf.getfloat('model','dropout'),
-            )
-    model.load_state_dict(torch.load(model_path), strict=False)
-    return model
-
-### EVALUATION of loaded model ###
-def test_single(env, model_path):
-    model = load_model(model_path)
-    env_targets = [float(s) for s in DTConf['test']['env_targets'].split(',')]
-    test_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/test/{model_path.split('-')[1]}/{policies[1]}_{num_agents}_agents/{model_path.split('.pt')[0][-13:]}/"
-    print(test_save_dir)
-    os.makedirs(test_save_dir, exist_ok=False)
+        act_dim = int(model_path.split('-')[0][-2:])
+    DT_agents = [idx for idx in range(len(policies)) if policies[idx] == 'DT']
+    env_targets = DTconfig.test_targets
+    test_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/test/{model_path.split('/')[-1].split('.pt')[0]}/{policies[0]}_{policies[1]}_{num_agents}_agents/"
     for tar in env_targets:
-        os.makedirs(test_save_dir + f'/{tar}/', exist_ok=True)
+        try:
+            os.makedirs(test_save_dir + f'/{tar}/', exist_ok=False)
+        except:
+            print(f'Target {tar} already exists')
+            env_targets.remove(tar)
+    test_stats = {'Tests': DTconfig.test_episodes, 'Policies': policies}
+    test_stats['summary'] = {}
+    for tar in env_targets:
+        test_stats['summary'][tar] = {'length': 0, 'reward': 0, 'goal': 0}
+        test_stats[tar] = {}
+        env.set_plot_save_dir(test_save_dir + f'/{tar}/')
+        for ep in range(DTconfig.test_episodes):
+            print(f'TARGET: {tar} | EP: {ep} / {DTconfig.test_episodes}', end='\r')
+            ep_length = 0; ep_reward = 0
+            s = reset_test(env, ep, model_path, state_dim, act_dim)
+            done = False
+            with torch.no_grad():
+                for DTA in DT_agents:
+                    env.agents[DTA].policy.initialize_history(s[DTA], tar) 
+                while not done:
+                    state, rew, done, _, stats = env.step([None]) 
+                    agent_ts = np.array([(1-int(x)) for x in stats['which_agents_done'].values()])
+                    for DTA in DT_agents:
+                        if int(agent_ts[DTA]) == 1:
+                            env.agents[DTA].policy.model_step(state[DTA], rew[DTA])
+                    ep_length += agent_ts
+                    ep_reward += rew
+                ep_goal = np.array([a.is_at_goal for a in env.agents])
+                # Save episodic stats
+                test_stats[tar][ep] = {'length': ep_length.tolist(), 'reward': ep_reward.tolist(), 'goal': ep_goal.tolist()}
+                # Save total stats
+                test_stats['summary'][tar]['length'] += ep_length/DTconfig.test_episodes
+                test_stats['summary'][tar]['reward'] += ep_reward/DTconfig.test_episodes
+                test_stats['summary'][tar]['goal'] += ep_goal/DTconfig.test_episodes
 
-    def eval_episodes(target_rew):
-        def fn(model):
-            returns, lengths = [], []
-            print()
-            env.set_plot_save_dir(test_save_dir + f'/{target_rew}/')
-            reset_test(env, 1)
-            df = pd.DataFrame()
-            for x in range(DTConf.getint('test','eval_episodes')):
-                print(f"RTG: {target_rew:.1f} | Eval episode: {x+1} / {DTConf.getint('test','eval_episodes')}", end='\r')
-                with torch.no_grad():
-                    if DTConf['model']['model_type'] == 'dt':
-                        ret, length, stats = test_episode_rtg_d4rl(
-                            env,
-                            state_dim,
-                            act_dim,
-                            model=model,
-                            max_ep_len=DTConf.getint('env', 'max_ep_len'),
-                            scale=DTConf.getfloat('env', 'scale'),
-                            target_return=target_rew/DTConf.getfloat('env', 'scale'),
-                            mode=DTConf['env']['mode'],
-                            state_mean=DTConf.getfloat('env', 'state_mean'),
-                            state_std=DTConf.getfloat('env', 'state_std'),
-                            device=DTConf['model']['device'],
-                            RES=DTConf.getint('env', 'res')
-                        )
-                        df = store_stats(
-                            df,
-                            {"test_episode": x+1, "target_return": target_rew},
-                            stats,
-                        )
-                        reset_test(env, x+2)
-                returns.append(ret)
-                lengths.append(length)
-            log_filename = test_save_dir + f"/stats.p"
-            if os.path.isfile(log_filename):
-                dfs = []
-                oldDF = pd.read_pickle(log_filename)
-                dfs.append(oldDF)
-                dfs.append(df)
-                newDF = pd.concat(dfs, ignore_index=True)
-                newDF.to_pickle(log_filename)
-            else:
-                df.to_pickle(log_filename)
-            return {
-                f'target_{target_rew}_return_mean': np.mean(returns),
-                f'target_{target_rew}_return_std': np.std(returns),
-                f'target_{target_rew}_return_max': np.max(returns),
-                f'target_{target_rew}_length_mean': np.mean(lengths),
-                f'target_{target_rew}_length_std': np.std(lengths),
-                f'target_{target_rew}_length_max': np.max(lengths),
-            }
-        return fn
-    logs = dict()
-    diagnostics = dict()
-    eval_start = time.time()
+        env.reset()  # Save last plot
 
-    model.eval()
-    eval_fns=[eval_episodes(tar) for tar in env_targets]
-    for eval_fn in eval_fns:
-        outputs = eval_fn(model)
-        for k, v in outputs.items():
-            logs[f'evaluation/{k}'] = v
+    for tar in env_targets:
+        test_stats['summary'][tar]['average'] = {}
+        for x in ['length', 'reward', 'goal']:
+            test_stats['summary'][tar]['average'][x] = np.mean(test_stats['summary'][tar][x]).tolist()
+            test_stats['summary'][tar][x] = test_stats['summary'][tar][x].tolist()
 
-    logs['time/total'] = time.time() - eval_start
-    logs['time/evaluation'] = time.time() - eval_start
-
-    for k in diagnostics:
-        logs[k] = diagnostics[k]
-
-    if DTConf.getboolean('env','print_logs'):
-        print()
-        print('=' * 80)
-        for k, v in logs.items():
-            print(f'{k}: {v}')
-
-
-def test_multi(model_path):
-    # Load copy of model for each agent to get actions from
-    num_agents = 4
-    models = []
-    envs = []
-    for i in range(num_agents):
-        models.append(load_model(model_path))
-        envs.append(create_env())
-    
-    # model_evaluation(env, models, model_path)
+    # Write stats
+    print('Saving stats')
+    with open(test_save_dir + f'stats{datetime.datetime.now().strftime("%Y%m%d-%H%M")}.json', 'w') as f:
+        f.write(json.dumps(test_stats, indent=4))
 
 ### MAIN ###
 if __name__ == '__main__':
-    model_path = DTConf['test']['model_path']
-    seed = DTConf.getint('test', 'seed')
-    multi = DTConf.getboolean('test', 'multi')
+
+    model_path = os.path.join(os.path.dirname(__file__), DTconfig.model_path)
+    seed = DTconfig.seed
 
     np.random.seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
 
-    if multi:
-        test_multi(model_path)
-    else:
-        test_single(env, model_path)
+    test_model(env, model_path)
