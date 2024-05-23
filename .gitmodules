@@ -1,3 +1,0 @@
-[submodule "decision_transformer/envs/gym_ca"]
-	path = decision_transformer/envs/gym_ca
-	url = git@github.com:gjbecker/gym_ca.git
