@@ -7,14 +7,8 @@ import datetime, time, os, random, sys
 import argparse
 from decision_transformer.models.decision_transformer import DecisionTransformer
 import DT_GA3C_config as DTconfig
-
-sys.path.append(os.path.abspath(os.path.join('..', 'gym_ca')))
-try:
-    from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-    from gym_collision_avoidance.envs import Config
-except:
-    print('Could not find gym_collision_avoidance module. Was it installed?')
-    sys.exit()
+from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+from gym_collision_avoidance.envs import Config
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"DEVICE: {DEVICE}")
@@ -40,21 +34,24 @@ elif type(other_pols) == list:
 else:
     assert(0), 'Unrecognized policy!'
 
-Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
-Config.MAX_NUM_AGENTS_TO_SIM = num_agents
-Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
+# Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
+# Config.MAX_NUM_AGENTS_TO_SIM = num_agents
+# Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
+Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = 4
+Config.MAX_NUM_AGENTS_TO_SIM = 4
+Config.MAX_NUM_OTHER_AGENTS_OBSERVED = 4 - 1
 Config.SAVE_EPISODE_PLOTS = True
 Config.setup_obs()
 
 env = create_env()
 
 test_cases = pd.read_pickle(
-    os.path.dirname(os.path.realpath(__file__)) 
-    + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))) 
+    + f'/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
 )
 
 def reset_test(env, case_num, model_path=None, state_dim=None, act_dim=None, checkpt=None):
-    import decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.test_cases as tc
+    import gym_collision_avoidance.envs.test_cases as tc
 
     def reset_env(env, agents, case_num, policy,):
         env.unwrapped.plot_policy_name = policy        

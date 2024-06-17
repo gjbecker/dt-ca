@@ -1,4 +1,11 @@
-from decision_transformer.envs.gym_ca.gym_collision_avoidance.envs.policies.GA3C_CADRL.network import Actions, Actions_Plus
+import sys, os
+try:
+    sys.path.append(os.path.abspath(os.path.join('..', 'gym_ca')))
+    from gym_collision_avoidance.envs.policies.GA3C_CADRL.network import Actions, Actions_Plus
+except:
+    print('Could not find gym_ca module. Was it installed?')
+    sys.exit()
+
 from models.models_dict import models
 import numpy as np
 
@@ -17,14 +24,18 @@ wandb = True
 
 k = 5
 num_eval_episodes = 50
-max_iters = 40
+max_iters = 20
 num_steps_per_iter = 2500 # decreased step per iter
 device = 'cuda'           
 
 ### ENV ###
-dataset = '4_agent_11_actions/medium.pkl'
-ACTIONS = 'discrete'
-# ACTIONS = 'continuous'
+dataset = '2-4_agent_11_actions/medium.pkl'               ###
+
+varying_agents = True                                   ###
+max_num_agents = 4                                      ###
+
+# ACTIONS = 'discrete'                                    ###
+ACTIONS = 'continuous'                                  ###
 
 if ACTIONS == 'discrete':
     env_name = 'disc_GA3C'
@@ -40,7 +51,7 @@ state_std = 1
 print_logs = True
 
 ### EVALUATION ###
-num_agents = 4
+num_agents = 3
 policies = 'RVO'
 env_targets = [0,0.5,1.0]
 test_case_fn = "get_testcase_random"
@@ -62,11 +73,13 @@ checkpoint = True
 resume = False
 #load_path = models/4_agent_11_actions/20240409-1337.pth
 
+##### END TRAINING #####
 
 ### TEST ###
-model_path = f'models/{models["E-11c-K5-G1"]}'
+# model_path = f'models/{models["E-11c-K5-G1"]}'
+model_path = 'models/cont_GA3C11-2-4-20240524-1158.pt'
 test_policy = 'DT'
 other_policies = 'DT'
-test_targets = [-1, -10, 10]
+test_targets = [1]
 seed = 0
 test_episodes = 500

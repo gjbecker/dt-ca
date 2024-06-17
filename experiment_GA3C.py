@@ -12,7 +12,7 @@ import DT_GA3C_config as DTconfig
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
-from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg_d4rl
+from decision_transformer.evaluation.evaluate_episodes import evaluate_episode_rtg_ca
 from decision_transformer.models.decision_transformer import DecisionTransformer
 # from decision_transformer.models.mlp_bc import MLPBCModel             # BC Model
 # from decision_transformer.training.act_trainer import ActTrainer      # BC Trainer
@@ -45,20 +45,27 @@ def experiment(
     ### REMOVED other gym environments, original implementation in experiment.py
     if env_name[-4:] == 'GA3C':
         # ADDED check for gym_collision_avoidance module 
-        sys.path.append(os.path.abspath(os.path.join('..', 'gym_ca')))
-        try:
-            from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
-            from gym_collision_avoidance.envs import Config
-            import gym_collision_avoidance.envs.test_cases as tc
-        except:
-            print('Could not find gym_collision_avoidance module. Was it installed?')
-            sys.exit()
+        from gym_collision_avoidance.experiments.src.env_utils import create_env, store_stats
+        from gym_collision_avoidance.envs import Config
+        import gym_collision_avoidance.envs.test_cases as tc
         
-        num_agents = int(dataset.split('_')[0])
+        num_agents = DTconfig.num_agents
+        policies = DTconfig.policies
+        if DTconfig.varying_agents == True:
+            pad_data = True
+            assert(DTconfig.max_num_agents<=num_agents), 'Max number of agents too low'
+            Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = DTconfig.max_num_agents
+            Config.MAX_NUM_AGENTS_TO_SIM = DTconfig.max_num_agents
+            Config.MAX_NUM_OTHER_AGENTS_OBSERVED = DTconfig.max_num_agents - 1
+            eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('/')[0]}/{policies}_{num_agents}-{DTconfig.max_num_agents}_agents/{env_name}/{model_id}/"
+        else:    
+            pad_data = False    
+            Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
+            Config.MAX_NUM_AGENTS_TO_SIM = num_agents
+            Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
+            eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('/')[0]}/{policies}_{num_agents}_agents/{env_name}/{model_id}/"
+        os.makedirs(eval_save_dir, exist_ok=True)
         num_actions = int(dataset.split('_')[2])
-        Config.MAX_NUM_AGENTS_IN_ENVIRONMENT = num_agents
-        Config.MAX_NUM_AGENTS_TO_SIM = num_agents
-        Config.MAX_NUM_OTHER_AGENTS_OBSERVED = num_agents - 1
         Config.SAVE_EPISODE_PLOTS = True
         Config.STATES_IN_OBS = ['num_other_agents', 'dist_to_goal', 'heading_ego_frame', 'pref_speed', 'radius', 'other_agents_states']
         Config.setup_obs()
@@ -82,11 +89,11 @@ def experiment(
         #         num_agents=DTconfig.num_agents, side_length=5, speed_bnds=[0.5, 2.0], radius_bnds=[0.5,0.5]
         #     )
         #     test_cases.append(test_case)
-        policies = DTconfig.policies
+        
 
         test_cases = pd.read_pickle(
-            os.path.dirname(os.path.realpath(__file__)) 
-            + f'/decision_transformer/envs/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
+            os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+            + f'/gym_ca/gym_collision_avoidance/envs/test_cases/{num_agents}_agents_500_cases.p'
             )
         
         def reset_test(case_num, iter_num):
@@ -109,10 +116,7 @@ def experiment(
 
             reset_env(env, agents, case_num, policy='DT')
             
-        max_ep_len = DTconfig.max_ep_len
-        eval_save_dir = os.path.dirname(os.path.realpath(__file__)) + f"/model_eval/{dataset.split('/')[0]}/{policies}_{num_agents}_agents/{env_name}/{model_id}/"
-        os.makedirs(eval_save_dir, exist_ok=True)
-        
+        max_ep_len = DTconfig.max_ep_len        
         scale = DTconfig.scale
     else:
         raise NotImplementedError
@@ -153,7 +157,7 @@ def experiment(
     print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
     print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
     print('=' * 50)
-    assert(0)
+    # assert(0)
     K = variant['K']      
     gamma = DTconfig.gamma
     batch_size = variant['batch_size']
@@ -239,7 +243,7 @@ def experiment(
                 print(f'Eval episode: {x+1} / {num_eval_episodes}', end='\r')
                 with torch.no_grad():
                     if model_type == 'dt':
-                        ret, length, stats = evaluate_episode_rtg_d4rl(
+                        ret, length, stats = evaluate_episode_rtg_ca(
                             env,
                             state_dim,
                             act_dim,
