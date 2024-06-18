@@ -107,7 +107,7 @@ def experiment(
             # test_ = test_cases[(DTconfig.num_eval_episodes*(iter_num-1))+case_num-1]
             # agents = tc.cadrl_test_case_to_agents(test_, tc_args['policies'], tc_args['policy_distr'])
             # agents[0].policy = tc.policy_dict['external']()   # set first agent policy to external and init
-            if case_num > 20:
+            if case_num > int(0.8*variant['num_eval_episodes']):
                 policies = ['noncoop']*num_agents
             else:
                 policies = [DTconfig.policies]*num_agents
